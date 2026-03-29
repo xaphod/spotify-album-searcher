@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlbumAccumulator, ScanProgress, TokenResponse } from "@/lib/types";
 import { scanLibrary } from "@/lib/scanner";
-import { RateLimitedPool, saveAlbums } from "@/lib/spotify";
+import { RateLimitedPool, saveAlbums, setRateLimitCallback } from "@/lib/spotify";
 
 type Status = "loading" | "idle" | "scanning" | "review" | "saving" | "done" | "error";
 
@@ -15,6 +15,8 @@ export default function ScanPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string>("");
   const [saveProgress, setSaveProgress] = useState({ saved: 0, total: 0 });
+  const [rateLimitWait, setRateLimitWait] = useState<number | null>(null);
+  const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const tokenRef = useRef<{ accessToken: string; expiresAt: number } | null>(null);
 
@@ -54,8 +56,27 @@ export default function ScanPage() {
     setProgress(null);
     setAlbums([]);
     setError("");
+    setRateLimitWait(null);
 
     abortRef.current = new AbortController();
+
+    // Register rate limit callback — shows countdown in UI
+    setRateLimitCallback((waitSeconds) => {
+      setRateLimitWait(waitSeconds);
+      // Count down every second
+      if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
+      let remaining = waitSeconds;
+      rateLimitTimerRef.current = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(rateLimitTimerRef.current!);
+          rateLimitTimerRef.current = null;
+          setRateLimitWait(null);
+        } else {
+          setRateLimitWait(remaining);
+        }
+      }, 1000);
+    });
 
     try {
       const results = await scanLibrary(
@@ -79,6 +100,13 @@ export default function ScanPage() {
       }
       setError(err instanceof Error ? err.message : "Scan failed");
       setStatus("error");
+    } finally {
+      setRateLimitCallback(null);
+      if (rateLimitTimerRef.current) {
+        clearInterval(rateLimitTimerRef.current);
+        rateLimitTimerRef.current = null;
+      }
+      setRateLimitWait(null);
     }
   }
 
@@ -161,9 +189,11 @@ export default function ScanPage() {
       {status === "scanning" && progress && (
         <div className="scan-progress">
           <p className="progress-text">
-            {progress.phase === "checking"
-              ? "Checking saved albums..."
-              : `Scanning... ${progress.tracksScanned.toLocaleString()} / ${progress.totalTracks.toLocaleString()} tracks`}
+            {rateLimitWait
+              ? `Rate limited — resuming in ${rateLimitWait}s...`
+              : progress.phase === "checking"
+                ? "Checking saved albums..."
+                : `Scanning... ${progress.tracksScanned.toLocaleString()} / ${progress.totalTracks.toLocaleString()} tracks`}
           </p>
           <div className="progress-bar">
             <div

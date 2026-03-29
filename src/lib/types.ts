@@ -19,13 +19,14 @@ export interface AlbumAccumulator {
 
 // Scan progress callback payload
 export interface ScanProgress {
-  phase: "scanning" | "checking" | "complete" | "error";
+  phase: "scanning" | "checking" | "complete" | "error" | "rate_limited";
   tracksScanned: number;
   totalTracks: number;
   pagesCompleted: number;
   totalPages: number;
   albumsFound: number;
   error?: string;
+  rateLimitWaitSeconds?: number;
 }
 
 // Spotify API response types
