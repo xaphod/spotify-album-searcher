@@ -2,6 +2,8 @@
 
 Scans your Spotify liked songs and finds albums you should save to your library. If you've liked 70% or more of an album's tracks but haven't saved the album itself, this app will find it and let you add it with one click.
 
+https://github.com/user-attachments/assets/c3c5b032-c9bf-48c9-bfd1-9ea346d9c88c
+
 ## Installing / Using the app
 
 You'll need a Spotify Premium account. There are three parts: creating a Spotify app (so the tool can access your library), deploying the web app on Vercel (free), and connecting the two.
