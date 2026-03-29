@@ -119,14 +119,13 @@ export async function spotifyFetch<T>(
 
       if (res.status === 429) {
         rateLimitRetries++;
-        if (rateLimitRetries > 3) {
+        if (rateLimitRetries > 1) {
           throw new Error(
             "Spotify rate limit hit — please wait a few minutes before trying again"
           );
         }
-        // Escalating wait: 10s, 30s, 60s — shown to user via callback
-        const waitSeconds = [10, 30, 60][rateLimitRetries - 1];
-        onRateLimitPause?.(waitSeconds);
+        // Single retry after 10s pause, shown to user via callback
+        onRateLimitPause?.(10);
         pool.triggerPause(waitSeconds);
         await new Promise((r) => setTimeout(r, waitSeconds * 1000));
         continue;
