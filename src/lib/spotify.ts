@@ -5,6 +5,25 @@ import {
 
 const SPOTIFY_API = "https://api.spotify.com/v1";
 
+async function getRetryAfterMessage(): Promise<string> {
+  try {
+    const res = await fetch("/api/check-rate-limit");
+    const data = await res.json();
+    if (data.rateLimited && data.retryAfter > 0) {
+      const seconds = data.retryAfter;
+      if (seconds >= 3600) {
+        return `Spotify rate limit hit — try again in ${Math.ceil(seconds / 3600)} hour(s)`;
+      } else if (seconds >= 60) {
+        return `Spotify rate limit hit — try again in ${Math.ceil(seconds / 60)} minute(s)`;
+      }
+      return `Spotify rate limit hit — try again in ${seconds} seconds`;
+    }
+  } catch {
+    // Fall through to default message
+  }
+  return "Spotify rate limit hit — please wait a few minutes before trying again";
+}
+
 // --- Rate-limited concurrency pool ---
 
 type QueueItem<T> = {
@@ -110,19 +129,15 @@ export async function spotifyFetch<T>(
       });
 
       if (res.status === 429) {
-        const retryAfter = parseInt(
-          res.headers.get("Retry-After") || "5",
-          10
-        );
-        // If Spotify says wait more than 30s, don't retry — fail fast to avoid escalating the penalty
-        if (rateLimitRetries > 0 || retryAfter > 30) {
-          throw new Error(
-            `Spotify rate limit — please wait ${retryAfter > 60 ? Math.ceil(retryAfter / 60) + " minutes" : retryAfter + " seconds"} and try again`
-          );
+        // Retry-After header is not readable from the browser due to CORS.
+        // Proxy through our server to get the actual value.
+        if (rateLimitRetries > 0) {
+          const waitMsg = await getRetryAfterMessage();
+          throw new Error(waitMsg);
         }
         rateLimitRetries++;
-        pool.triggerPause(retryAfter);
-        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        pool.triggerPause(10);
+        await new Promise((r) => setTimeout(r, 10_000));
         continue;
       }
 
