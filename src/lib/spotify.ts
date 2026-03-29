@@ -132,9 +132,9 @@ export async function spotifyFetch<T>(
         throw lastError;
       }
 
-      // For 204 responses (e.g., PUT /me/albums), no body
-      if (res.status === 204) return undefined as T;
-      return (await res.json()) as T;
+      const text = await res.text();
+      if (!text) return undefined as T;
+      return JSON.parse(text) as T;
     }
     throw lastError ?? new Error("Max retries exceeded");
   });
