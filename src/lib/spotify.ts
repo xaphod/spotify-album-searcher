@@ -126,8 +126,8 @@ export async function spotifyFetch<T>(
         }
         // Single retry after 10s pause, shown to user via callback
         onRateLimitPause?.(10);
-        pool.triggerPause(waitSeconds);
-        await new Promise((r) => setTimeout(r, waitSeconds * 1000));
+        pool.triggerPause(10);
+        await new Promise((r) => setTimeout(r, 10_000));
         continue;
       }
 
