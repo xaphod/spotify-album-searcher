@@ -95,7 +95,10 @@ export async function spotifyFetch<T>(
 ): Promise<T> {
   return pool.enqueue(async (signal) => {
     let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let rateLimitRetries = 0;
+    let errorRetries = 0;
+
+    for (;;) {
       const res = await fetch(url, {
         ...options,
         signal,
@@ -107,12 +110,15 @@ export async function spotifyFetch<T>(
       });
 
       if (res.status === 429) {
+        rateLimitRetries++;
+        if (rateLimitRetries > 10) {
+          throw new Error(`Rate limited too many times (${url})`);
+        }
         const retryAfter = parseInt(
           res.headers.get("Retry-After") || "2",
           10
         );
         pool.triggerPause(retryAfter);
-        // Wait for the pause duration before retrying this specific request
         await new Promise((r) => setTimeout(r, retryAfter * 1000));
         continue;
       }
@@ -122,10 +128,11 @@ export async function spotifyFetch<T>(
         lastError = new Error(
           `Spotify API ${res.status}: ${errorBody || res.statusText} (${url})`
         );
-        // Retry on 5xx
-        if (res.status >= 500) {
+        // Retry on 5xx up to 3 times
+        if (res.status >= 500 && errorRetries < 3) {
+          errorRetries++;
           await new Promise((r) =>
-            setTimeout(r, Math.pow(2, attempt) * 1000)
+            setTimeout(r, Math.pow(2, errorRetries) * 1000)
           );
           continue;
         }
@@ -136,7 +143,6 @@ export async function spotifyFetch<T>(
       if (!text) return undefined as T;
       return JSON.parse(text) as T;
     }
-    throw lastError ?? new Error("Max retries exceeded");
   });
 }
 
