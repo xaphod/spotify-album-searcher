@@ -15,7 +15,7 @@ export async function scanLibrary(
   onProgress: (progress: ScanProgress) => void,
   signal?: AbortSignal
 ): Promise<AlbumAccumulator[]> {
-  const pool = new RateLimitedPool(5);
+  const pool = new RateLimitedPool(3);
   const albumMap = new Map<string, AlbumAccumulator>();
   let pagesCompleted = 0;
   let tracksScanned = 0;
