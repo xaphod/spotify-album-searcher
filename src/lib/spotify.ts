@@ -118,8 +118,9 @@ export async function spotifyFetch<T>(
       }
 
       if (!res.ok) {
+        const errorBody = await res.text().catch(() => "");
         lastError = new Error(
-          `Spotify API ${res.status}: ${res.statusText} (${url})`
+          `Spotify API ${res.status}: ${errorBody || res.statusText} (${url})`
         );
         // Retry on 5xx
         if (res.status >= 500) {
@@ -184,10 +185,12 @@ export async function saveAlbums(
   for (let i = 0; i < albumIds.length; i += 50) {
     const batch = albumIds.slice(i, i + 50);
     const uris = batch.map((id) => `spotify:album:${id}`);
-    await spotifyFetch<void>(pool, token, `${SPOTIFY_API}/me/library`, {
-      method: "PUT",
-      body: JSON.stringify({ uris }),
-    });
+    await spotifyFetch<void>(
+      pool,
+      token,
+      `${SPOTIFY_API}/me/library?uris=${encodeURIComponent(uris.join(","))}&type=album`,
+      { method: "PUT" }
+    );
     saved += batch.length;
     onProgress?.(saved, albumIds.length);
   }
