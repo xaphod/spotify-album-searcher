@@ -111,15 +111,17 @@ export async function spotifyFetch<T>(
 
       if (res.status === 429) {
         rateLimitRetries++;
-        if (rateLimitRetries > 10) {
-          throw new Error(`Rate limited too many times (${url})`);
+        if (rateLimitRetries > 5) {
+          throw new Error("Spotify rate limit — please wait a few minutes and try again");
         }
         const retryAfter = parseInt(
-          res.headers.get("Retry-After") || "2",
+          res.headers.get("Retry-After") || "5",
           10
         );
-        pool.triggerPause(retryAfter);
-        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        // Wait at least retryAfter, with exponential increase on repeated 429s
+        const waitSeconds = Math.max(retryAfter, retryAfter * Math.pow(2, rateLimitRetries - 1));
+        pool.triggerPause(waitSeconds);
+        await new Promise((r) => setTimeout(r, waitSeconds * 1000));
         continue;
       }
 
