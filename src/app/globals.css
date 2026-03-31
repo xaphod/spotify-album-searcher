@@ -306,6 +306,17 @@ body {
   margin: 0 -2rem;
 }
 
+/* Inline save error */
+.save-error {
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  color: var(--error);
+  font-size: 0.9rem;
+}
+
 /* Success / Error states */
 .status-message {
   text-align: center;

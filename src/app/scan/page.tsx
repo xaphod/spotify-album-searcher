@@ -138,6 +138,7 @@ export default function ScanPage() {
     const albumIds = Array.from(selected);
     if (albumIds.length === 0) return;
 
+    setError("");
     setStatus("saving");
     setSaveProgress({ saved: 0, total: albumIds.length });
 
@@ -150,7 +151,7 @@ export default function ScanPage() {
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
-      setStatus("error");
+      setStatus("review"); // Return to review so selection is preserved
     }
   }
 
@@ -244,6 +245,11 @@ export default function ScanPage() {
       {/* REVIEW — with results */}
       {status === "review" && albums.length > 0 && (
         <>
+          {error && (
+            <div className="save-error">
+              <p>{error}</p>
+            </div>
+          )}
           <div className="review-header">
             <h2>
               {albums.length} album{albums.length !== 1 ? "s" : ""} found
