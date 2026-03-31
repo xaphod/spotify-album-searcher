@@ -292,6 +292,15 @@ export default function ScanPage() {
                   </div>
                   <div className="album-liked">
                     {album.likedTracks} of {album.totalTracks} tracks liked
+                    {" · "}
+                    <a
+                      href={`https://open.spotify.com/album/${album.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Open in Spotify
+                    </a>
                   </div>
                 </div>
                 <div className="album-checkbox">

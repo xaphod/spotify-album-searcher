@@ -279,6 +279,15 @@ body {
   margin-top: 0.25rem;
 }
 
+.album-liked a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+
+.album-liked a:hover {
+  color: var(--text);
+}
+
 .album-checkbox {
   display: flex;
   align-items: center;
