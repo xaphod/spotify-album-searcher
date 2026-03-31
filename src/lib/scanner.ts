@@ -8,6 +8,7 @@ import {
   RateLimitedPool,
   getLikedTracksPage,
   checkAlbumsSaved,
+  getSavedAlbumKeys,
 } from "./spotify";
 
 export async function scanLibrary(
@@ -114,8 +115,15 @@ export async function scanLibrary(
   const candidateIds = candidates.map((a) => a.id);
   const savedMap = await checkAlbumsSaved(pool, latestToken, candidateIds);
 
-  // Return only unsaved albums
-  const qualifying = candidates.filter((a) => !savedMap.get(a.id));
+  // Filter out albums saved by exact ID
+  let qualifying = candidates.filter((a) => !savedMap.get(a.id));
+
+  // Step 5: Filter out regional variants — same album name+artist but different ID
+  const savedKeys = await getSavedAlbumKeys(pool, latestToken);
+  qualifying = qualifying.filter((a) => {
+    const key = `${a.artistName.toLowerCase()} /// ${a.name.toLowerCase()}`;
+    return !savedKeys.has(key);
+  });
 
   // Sort by most liked tracks (descending)
   qualifying.sort((a, b) => b.likedTracks - a.likedTracks);

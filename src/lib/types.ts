@@ -64,6 +64,15 @@ export interface SpotifySavedTrack {
   };
 }
 
+export interface SpotifySavedAlbum {
+  added_at: string;
+  album: {
+    id: string;
+    name: string;
+    artists: { name: string }[];
+  };
+}
+
 export interface SpotifyUser {
   id: string;
   display_name: string | null;

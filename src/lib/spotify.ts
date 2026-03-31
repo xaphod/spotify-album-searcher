@@ -1,5 +1,6 @@
 import {
   SpotifyPaging,
+  SpotifySavedAlbum,
   SpotifySavedTrack,
 } from "./types";
 
@@ -166,6 +167,33 @@ export async function getLikedTracksPage(
     token,
     `${SPOTIFY_API}/me/tracks?limit=50&offset=${offset}`
   );
+}
+
+export async function getSavedAlbumKeys(
+  pool: RateLimitedPool,
+  token: string
+): Promise<Set<string>> {
+  const keys = new Set<string>();
+  let offset = 0;
+
+  for (;;) {
+    const page = await spotifyFetch<SpotifyPaging<SpotifySavedAlbum>>(
+      pool,
+      token,
+      `${SPOTIFY_API}/me/albums?limit=50&offset=${offset}`
+    );
+
+    for (const item of page.items) {
+      const artist = item.album.artists.map((a) => a.name).join(", ").toLowerCase();
+      const name = item.album.name.toLowerCase();
+      keys.add(`${artist} /// ${name}`);
+    }
+
+    offset += page.items.length;
+    if (!page.next || offset >= page.total) break;
+  }
+
+  return keys;
 }
 
 export async function checkAlbumsSaved(
