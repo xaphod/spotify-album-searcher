@@ -195,8 +195,8 @@ export async function saveAlbums(
   onProgress?: (saved: number, total: number) => void
 ): Promise<void> {
   let saved = 0;
-  // New endpoint uses URIs, batch into groups of 50
-  for (let i = 0; i < albumIds.length; i += 50) {
+  // New endpoint accepts fewer URIs via query string
+  for (let i = 0; i < albumIds.length; i += 10) {
     const batch = albumIds.slice(i, i + 50);
     const uris = batch.map((id) => `spotify:album:${id}`);
     await spotifyFetch<void>(
