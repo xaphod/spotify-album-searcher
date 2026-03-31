@@ -225,7 +225,7 @@ export async function saveAlbums(
   let saved = 0;
   // New endpoint accepts fewer URIs via query string
   for (let i = 0; i < albumIds.length; i += 10) {
-    const batch = albumIds.slice(i, i + 50);
+    const batch = albumIds.slice(i, i + 10);
     const uris = batch.map((id) => `spotify:album:${id}`);
     await spotifyFetch<void>(
       pool,
