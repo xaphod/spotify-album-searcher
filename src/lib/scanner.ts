@@ -1,13 +1,20 @@
 import {
   AlbumAccumulator,
+  ArtistToFollow,
+  FollowProgress,
   ScanProgress,
+  SpotifyImage,
   SpotifyPaging,
+  SpotifySavedAlbum,
   SpotifySavedTrack,
 } from "./types";
 import {
   RateLimitedPool,
+  getArtists,
   getLikedTracksPage,
+  getSavedAlbumsPage,
   checkAlbumsSaved,
+  checkArtistsFollowed,
   getSavedAlbumKeys,
 } from "./spotify";
 
@@ -129,6 +136,163 @@ export async function scanLibrary(
   qualifying.sort((a, b) => b.likedTracks - a.likedTracks);
 
   return qualifying;
+}
+
+type ArtistAccumulator = {
+  id: string;
+  name: string;
+  albumCount: number;
+};
+
+export async function scanArtistsToFollow(
+  getToken: () => Promise<string>,
+  onProgress: (progress: FollowProgress) => void,
+  signal?: AbortSignal
+): Promise<ArtistToFollow[]> {
+  const pool = new RateLimitedPool(5);
+  const artistMap = new Map<string, ArtistAccumulator>();
+  let pagesCompleted = 0;
+  let albumsScanned = 0;
+
+  if (signal) {
+    signal.addEventListener("abort", () => pool.abort(), { once: true });
+  }
+
+  const token = await getToken();
+  const firstPage = await getSavedAlbumsPage(pool, token, 0);
+  const total = firstPage.total;
+  const totalPages = Math.ceil(total / 50);
+
+  extractEligibleArtists(firstPage, artistMap);
+  albumsScanned = firstPage.items.length;
+  pagesCompleted = 1;
+
+  onProgress({
+    phase: "scanning",
+    albumsScanned,
+    totalAlbums: total,
+    pagesCompleted,
+    totalPages,
+    artistsFound: artistMap.size,
+  });
+
+  if (totalPages > 1) {
+    const offsets = Array.from(
+      { length: totalPages - 1 },
+      (_, i) => (i + 1) * 50
+    );
+
+    let pagesSinceTokenRefresh = 0;
+    let currentToken = token;
+
+    const pagePromises = offsets.map((offset) =>
+      (async () => {
+        pagesSinceTokenRefresh++;
+        if (pagesSinceTokenRefresh >= 200) {
+          pagesSinceTokenRefresh = 0;
+          currentToken = await getToken();
+        }
+
+        const page = await getSavedAlbumsPage(pool, currentToken, offset);
+        extractEligibleArtists(page, artistMap);
+
+        albumsScanned += page.items.length;
+        pagesCompleted++;
+
+        onProgress({
+          phase: "scanning",
+          albumsScanned,
+          totalAlbums: total,
+          pagesCompleted,
+          totalPages,
+          artistsFound: artistMap.size,
+        });
+
+        return page;
+      })()
+    );
+
+    await Promise.all(pagePromises);
+  }
+
+  onProgress({
+    phase: "checking",
+    albumsScanned: total,
+    totalAlbums: total,
+    pagesCompleted: totalPages,
+    totalPages,
+    artistsFound: artistMap.size,
+  });
+
+  if (artistMap.size === 0) {
+    return [];
+  }
+
+  const allArtistIds = Array.from(artistMap.keys());
+  const latestToken = await getToken();
+  const followedMap = await checkArtistsFollowed(pool, latestToken, allArtistIds);
+
+  const unfollowed = allArtistIds.filter((id) => !followedMap.get(id));
+  if (unfollowed.length === 0) {
+    return [];
+  }
+
+  const fullArtists = await getArtists(pool, latestToken, unfollowed);
+  const imageById = new Map<string, string>();
+  for (const a of fullArtists) {
+    imageById.set(a.id, pickSmallestImage(a.images));
+  }
+
+  const result: ArtistToFollow[] = unfollowed.map((id) => {
+    const acc = artistMap.get(id)!;
+    return {
+      id,
+      name: acc.name,
+      imageUrl: imageById.get(id) ?? "",
+      albumCount: acc.albumCount,
+    };
+  });
+
+  result.sort((a, b) => {
+    if (b.albumCount !== a.albumCount) return b.albumCount - a.albumCount;
+    return a.name.localeCompare(b.name);
+  });
+
+  return result;
+}
+
+function extractEligibleArtists(
+  page: SpotifyPaging<SpotifySavedAlbum>,
+  artistMap: Map<string, ArtistAccumulator>
+) {
+  for (const item of page.items) {
+    const artists = item.album.artists;
+    if (artists.length < 1 || artists.length > 2) continue;
+    for (const artist of artists) {
+      if (!artist.id) continue;
+      const existing = artistMap.get(artist.id);
+      if (existing) {
+        existing.albumCount++;
+      } else {
+        artistMap.set(artist.id, {
+          id: artist.id,
+          name: artist.name,
+          albumCount: 1,
+        });
+      }
+    }
+  }
+}
+
+function pickSmallestImage(images: SpotifyImage[]): string {
+  if (images.length === 0) return "";
+  const smallest = images.reduce<SpotifyImage | null>((acc, img) => {
+    if (!acc || (img.width && acc.width && img.width < acc.width)) {
+      return img;
+    }
+    return acc;
+  }, null);
+  return smallest?.url ?? images[0].url;
 }
 
 function extractAlbums(

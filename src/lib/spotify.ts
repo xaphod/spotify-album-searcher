@@ -1,4 +1,5 @@
 import {
+  SpotifyArtist,
   SpotifyPaging,
   SpotifySavedAlbum,
   SpotifySavedTrack,
@@ -169,6 +170,18 @@ export async function getLikedTracksPage(
   );
 }
 
+export async function getSavedAlbumsPage(
+  pool: RateLimitedPool,
+  token: string,
+  offset: number
+): Promise<SpotifyPaging<SpotifySavedAlbum>> {
+  return spotifyFetch<SpotifyPaging<SpotifySavedAlbum>>(
+    pool,
+    token,
+    `${SPOTIFY_API}/me/albums?limit=50&offset=${offset}`
+  );
+}
+
 export async function getSavedAlbumKeys(
   pool: RateLimitedPool,
   token: string
@@ -177,11 +190,7 @@ export async function getSavedAlbumKeys(
   let offset = 0;
 
   for (;;) {
-    const page = await spotifyFetch<SpotifyPaging<SpotifySavedAlbum>>(
-      pool,
-      token,
-      `${SPOTIFY_API}/me/albums?limit=50&offset=${offset}`
-    );
+    const page = await getSavedAlbumsPage(pool, token, offset);
 
     for (const item of page.items) {
       const artist = item.album.artists.map((a) => a.name).join(", ").toLowerCase();
@@ -194,6 +203,62 @@ export async function getSavedAlbumKeys(
   }
 
   return keys;
+}
+
+export async function checkArtistsFollowed(
+  pool: RateLimitedPool,
+  token: string,
+  artistIds: string[]
+): Promise<Map<string, boolean>> {
+  const result = new Map<string, boolean>();
+  for (let i = 0; i < artistIds.length; i += 50) {
+    const batch = artistIds.slice(i, i + 50);
+    const followed = await spotifyFetch<boolean[]>(
+      pool,
+      token,
+      `${SPOTIFY_API}/me/following/contains?type=artist&ids=${batch.join(",")}`
+    );
+    batch.forEach((id, idx) => result.set(id, followed[idx]));
+  }
+  return result;
+}
+
+export async function getArtists(
+  pool: RateLimitedPool,
+  token: string,
+  artistIds: string[]
+): Promise<SpotifyArtist[]> {
+  const all: SpotifyArtist[] = [];
+  for (let i = 0; i < artistIds.length; i += 50) {
+    const batch = artistIds.slice(i, i + 50);
+    const res = await spotifyFetch<{ artists: SpotifyArtist[] }>(
+      pool,
+      token,
+      `${SPOTIFY_API}/artists?ids=${batch.join(",")}`
+    );
+    all.push(...res.artists);
+  }
+  return all;
+}
+
+export async function followArtists(
+  pool: RateLimitedPool,
+  token: string,
+  artistIds: string[],
+  onProgress?: (followed: number, total: number) => void
+): Promise<void> {
+  let followed = 0;
+  for (let i = 0; i < artistIds.length; i += 50) {
+    const batch = artistIds.slice(i, i + 50);
+    await spotifyFetch<void>(
+      pool,
+      token,
+      `${SPOTIFY_API}/me/following?type=artist&ids=${batch.join(",")}`,
+      { method: "PUT" }
+    );
+    followed += batch.length;
+    onProgress?.(followed, artistIds.length);
+  }
 }
 
 export async function checkAlbumsSaved(

@@ -1,24 +1,50 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlbumAccumulator, ScanProgress, TokenResponse } from "@/lib/types";
-import { scanLibrary } from "@/lib/scanner";
-import { RateLimitedPool, saveAlbums, setRateLimitCallback } from "@/lib/spotify";
+import {
+  AlbumAccumulator,
+  ArtistToFollow,
+  FollowProgress,
+  ScanMode,
+  ScanProgress,
+  TokenResponse,
+} from "@/lib/types";
+import { scanArtistsToFollow, scanLibrary } from "@/lib/scanner";
+import {
+  RateLimitedPool,
+  followArtists,
+  saveAlbums,
+  setRateLimitCallback,
+} from "@/lib/spotify";
 
-type Status = "loading" | "idle" | "scanning" | "review" | "saving" | "done" | "error";
+type Status =
+  | "loading"
+  | "idle"
+  | "scanning"
+  | "review"
+  | "saving"
+  | "done"
+  | "error";
 
 export default function ScanPage() {
   const [status, setStatus] = useState<Status>("loading");
+  const [mode, setMode] = useState<ScanMode | null>(null);
   const [userName, setUserName] = useState<string>("");
   const [progress, setProgress] = useState<ScanProgress | null>(null);
+  const [followProgress, setFollowProgress] = useState<FollowProgress | null>(
+    null
+  );
   const [albums, setAlbums] = useState<AlbumAccumulator[]>([]);
+  const [artists, setArtists] = useState<ArtistToFollow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string>("");
   const [saveProgress, setSaveProgress] = useState({ saved: 0, total: 0 });
   const [rateLimitWait, setRateLimitWait] = useState<number | null>(null);
   const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const tokenRef = useRef<{ accessToken: string; expiresAt: number } | null>(null);
+  const tokenRef = useRef<{ accessToken: string; expiresAt: number } | null>(
+    null
+  );
 
   const getToken = useCallback(async (): Promise<string> => {
     if (tokenRef.current && tokenRef.current.expiresAt - Date.now() > 300_000) {
@@ -33,7 +59,6 @@ export default function ScanPage() {
     return data.accessToken;
   }, []);
 
-  // Check auth on mount
   useEffect(() => {
     getToken()
       .then(() => setStatus("idle"))
@@ -41,29 +66,26 @@ export default function ScanPage() {
         window.location.href = "/";
       });
 
-    // Fetch user name from session info
     fetch("/api/token")
       .then((r) => r.json())
-      .then(() => {
-        // User name comes from the session; we'd need a separate endpoint
-        // For now we skip this — user is clearly logged in if token works
-      })
+      .then(() => {})
       .catch(() => {});
   }, [getToken]);
 
-  async function startScan() {
+  async function startScan(scanMode: ScanMode) {
+    setMode(scanMode);
     setStatus("scanning");
     setProgress(null);
+    setFollowProgress(null);
     setAlbums([]);
+    setArtists([]);
     setError("");
     setRateLimitWait(null);
 
     abortRef.current = new AbortController();
 
-    // Register rate limit callback — shows countdown in UI
     setRateLimitCallback((waitSeconds) => {
       setRateLimitWait(waitSeconds);
-      // Count down every second
       if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current);
       let remaining = waitSeconds;
       rateLimitTimerRef.current = setInterval(() => {
@@ -79,23 +101,29 @@ export default function ScanPage() {
     });
 
     try {
-      const results = await scanLibrary(
-        getToken,
-        (p) => setProgress(p),
-        abortRef.current.signal
-      );
-
-      if (results.length === 0) {
-        setAlbums([]);
-        setStatus("review"); // Will show "no results" variant
-      } else {
+      if (scanMode === "albums") {
+        const results = await scanLibrary(
+          getToken,
+          (p) => setProgress(p),
+          abortRef.current.signal
+        );
         setAlbums(results);
+        setSelected(new Set(results.map((a) => a.id)));
+        setStatus("review");
+      } else {
+        const results = await scanArtistsToFollow(
+          getToken,
+          (p) => setFollowProgress(p),
+          abortRef.current.signal
+        );
+        setArtists(results);
         setSelected(new Set(results.map((a) => a.id)));
         setStatus("review");
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setStatus("idle");
+        setMode(null);
         return;
       }
       setError(err instanceof Error ? err.message : "Scan failed");
@@ -114,7 +142,18 @@ export default function ScanPage() {
     abortRef.current?.abort();
   }
 
-  function toggleAlbum(id: string) {
+  function backToIdle() {
+    setStatus("idle");
+    setMode(null);
+    setError("");
+    setAlbums([]);
+    setArtists([]);
+    setSelected(new Set());
+    setProgress(null);
+    setFollowProgress(null);
+  }
+
+  function toggleItem(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -127,7 +166,11 @@ export default function ScanPage() {
   }
 
   function selectAll() {
-    setSelected(new Set(albums.map((a) => a.id)));
+    if (mode === "artists") {
+      setSelected(new Set(artists.map((a) => a.id)));
+    } else {
+      setSelected(new Set(albums.map((a) => a.id)));
+    }
   }
 
   function deselectAll() {
@@ -135,27 +178,42 @@ export default function ScanPage() {
   }
 
   async function handleSave() {
-    const albumIds = Array.from(selected);
-    if (albumIds.length === 0) return;
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
 
     setError("");
     setStatus("saving");
-    setSaveProgress({ saved: 0, total: albumIds.length });
+    setSaveProgress({ saved: 0, total: ids.length });
 
     try {
       const token = await getToken();
       const pool = new RateLimitedPool(5);
-      await saveAlbums(pool, token, albumIds, (saved, total) => {
-        setSaveProgress({ saved, total });
-      });
+      if (mode === "artists") {
+        await followArtists(pool, token, ids, (followed, total) => {
+          setSaveProgress({ saved: followed, total });
+        });
+      } else {
+        await saveAlbums(pool, token, ids, (saved, total) => {
+          setSaveProgress({ saved, total });
+        });
+      }
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
-      setStatus("review"); // Return to review so selection is preserved
+      setStatus("review");
     }
   }
 
-  // Loading state
+  async function handleSignOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // best effort — still redirect
+    }
+    tokenRef.current = null;
+    window.location.href = "/";
+  }
+
   if (status === "loading") {
     return (
       <main className="scan-page">
@@ -166,6 +224,8 @@ export default function ScanPage() {
     );
   }
 
+  const itemCount = mode === "artists" ? artists.length : albums.length;
+
   return (
     <main className="scan-page">
       <header className="scan-header">
@@ -173,21 +233,41 @@ export default function ScanPage() {
         {userName && <span className="user-info">{userName}</span>}
       </header>
 
-      {/* IDLE */}
+      {/* IDLE — mode picker */}
       {status === "idle" && (
         <div className="scan-idle">
-          <p>
-            Scan your liked songs to find albums where you&apos;ve liked 70% or
-            more of the tracks but haven&apos;t saved the album.
-          </p>
-          <button className="btn btn-primary btn-large" onClick={startScan}>
-            Scan My Library
-          </button>
+          <p>Pick what you want to do.</p>
+          <div className="mode-picker">
+            <button
+              className="btn btn-primary btn-large"
+              onClick={() => startScan("albums")}
+            >
+              Find unsaved albums
+            </button>
+            <p className="mode-help">
+              Scans your liked songs and finds albums where you&apos;ve liked
+              70% or more of the tracks but haven&apos;t saved the album.
+            </p>
+            <button
+              className="btn btn-primary btn-large"
+              onClick={() => startScan("artists")}
+            >
+              Follow album artists
+            </button>
+            <p className="mode-help">
+              Scans your saved albums and follows the artists you aren&apos;t
+              already following. Skips albums with 3+ artists to avoid
+              compilations.
+            </p>
+            <button className="btn btn-secondary btn-medium signout-btn" onClick={handleSignOut}>
+              Sign out
+            </button>
+          </div>
         </div>
       )}
 
-      {/* SCANNING */}
-      {status === "scanning" && progress && (
+      {/* SCANNING — albums */}
+      {status === "scanning" && mode === "albums" && progress && (
         <div className="scan-progress">
           <p className="progress-text">
             {rateLimitWait
@@ -218,32 +298,74 @@ export default function ScanPage() {
         </div>
       )}
 
-      {/* SCANNING — before first progress arrives */}
-      {status === "scanning" && !progress && (
+      {/* SCANNING — artists */}
+      {status === "scanning" && mode === "artists" && followProgress && (
         <div className="scan-progress">
-          <p className="progress-text">Starting scan...</p>
-          <div className="progress-bar">
-            <div className="progress-bar-fill" style={{ width: "0%" }} />
-          </div>
-        </div>
-      )}
-
-      {/* REVIEW — no results */}
-      {status === "review" && albums.length === 0 && (
-        <div className="no-results">
-          <h2>No albums found</h2>
-          <p>
-            All your qualifying albums are already saved to your library, or
-            none of your albums meet the 70% threshold.
+          <p className="progress-text">
+            {rateLimitWait
+              ? `Rate limited — resuming in ${rateLimitWait}s...`
+              : followProgress.phase === "checking"
+                ? "Checking which artists you already follow..."
+                : `Scanning... ${followProgress.albumsScanned.toLocaleString()} / ${followProgress.totalAlbums.toLocaleString()} albums`}
           </p>
-          <button className="btn btn-primary btn-medium" onClick={startScan}>
-            Scan Again
+          <div className="progress-bar">
+            <div
+              className="progress-bar-fill"
+              style={{
+                width: `${
+                  followProgress.totalAlbums > 0
+                    ? (followProgress.albumsScanned /
+                        followProgress.totalAlbums) *
+                      100
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+          <p className="progress-detail">
+            {followProgress.pagesCompleted} / {followProgress.totalPages} pages
+            &middot;{" "}
+            {followProgress.artistsFound.toLocaleString()} artists found
+          </p>
+          <button className="btn btn-secondary btn-medium" onClick={cancelScan}>
+            Cancel
           </button>
         </div>
       )}
 
-      {/* REVIEW — with results */}
-      {status === "review" && albums.length > 0 && (
+      {/* SCANNING — before first progress arrives */}
+      {status === "scanning" &&
+        ((mode === "albums" && !progress) ||
+          (mode === "artists" && !followProgress)) && (
+          <div className="scan-progress">
+            <p className="progress-text">Starting scan...</p>
+            <div className="progress-bar">
+              <div className="progress-bar-fill" style={{ width: "0%" }} />
+            </div>
+          </div>
+        )}
+
+      {/* REVIEW — no results */}
+      {status === "review" && itemCount === 0 && (
+        <div className="no-results">
+          <h2>
+            {mode === "artists"
+              ? "No new artists to follow"
+              : "No albums found"}
+          </h2>
+          <p>
+            {mode === "artists"
+              ? "You already follow every artist from your saved albums (with 1 or 2 artists per album)."
+              : "All your qualifying albums are already saved to your library, or none of your albums meet the 70% threshold."}
+          </p>
+          <button className="btn btn-primary btn-medium" onClick={backToIdle}>
+            Back
+          </button>
+        </div>
+      )}
+
+      {/* REVIEW — albums mode */}
+      {status === "review" && mode === "albums" && albums.length > 0 && (
         <>
           {error && (
             <div className="save-error">
@@ -267,7 +389,7 @@ export default function ScanPage() {
               <div
                 key={album.id}
                 className={`album-card ${!selected.has(album.id) ? "unchecked" : ""}`}
-                onClick={() => toggleAlbum(album.id)}
+                onClick={() => toggleItem(album.id)}
               >
                 {album.imageUrl ? (
                   <img
@@ -307,7 +429,7 @@ export default function ScanPage() {
                   <input
                     type="checkbox"
                     checked={selected.has(album.id)}
-                    onChange={() => toggleAlbum(album.id)}
+                    onChange={() => toggleItem(album.id)}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -328,11 +450,96 @@ export default function ScanPage() {
         </>
       )}
 
+      {/* REVIEW — artists mode */}
+      {status === "review" && mode === "artists" && artists.length > 0 && (
+        <>
+          {error && (
+            <div className="save-error">
+              <p>{error}</p>
+            </div>
+          )}
+          <div className="review-header">
+            <h2>
+              {artists.length} artist{artists.length !== 1 ? "s" : ""} to follow
+            </h2>
+            <div className="review-actions">
+              <div className="select-links">
+                <button onClick={selectAll}>Select All</button>
+                <button onClick={deselectAll}>Deselect All</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="album-grid">
+            {artists.map((artist) => (
+              <div
+                key={artist.id}
+                className={`album-card ${!selected.has(artist.id) ? "unchecked" : ""}`}
+                onClick={() => toggleItem(artist.id)}
+              >
+                {artist.imageUrl ? (
+                  <img
+                    className="album-art artist-art"
+                    src={artist.imageUrl}
+                    alt={artist.name}
+                    width={64}
+                    height={64}
+                  />
+                ) : (
+                  <div
+                    className="album-art artist-art"
+                    style={{ background: "var(--surface-hover)" }}
+                  />
+                )}
+                <div className="album-info">
+                  <div className="album-name" title={artist.name}>
+                    {artist.name}
+                  </div>
+                  <div className="album-liked">
+                    {artist.albumCount} album{artist.albumCount !== 1 ? "s" : ""}{" "}
+                    in your library
+                    {" · "}
+                    <a
+                      href={`https://open.spotify.com/artist/${artist.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Open in Spotify
+                    </a>
+                  </div>
+                </div>
+                <div className="album-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(artist.id)}
+                    onChange={() => toggleItem(artist.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="save-bar">
+            <button
+              className="btn btn-primary btn-large"
+              onClick={handleSave}
+              disabled={selected.size === 0}
+            >
+              Follow {selected.size} Artist{selected.size !== 1 ? "s" : ""}
+            </button>
+          </div>
+        </>
+      )}
+
       {/* SAVING */}
       {status === "saving" && (
         <div className="scan-progress">
           <p className="progress-text">
-            Saving albums... {saveProgress.saved} / {saveProgress.total}
+            {mode === "artists"
+              ? `Following artists... ${saveProgress.saved} / ${saveProgress.total}`
+              : `Saving albums... ${saveProgress.saved} / ${saveProgress.total}`}
           </p>
           <div className="progress-bar">
             <div
@@ -354,11 +561,12 @@ export default function ScanPage() {
         <div className="status-message">
           <h2>Done!</h2>
           <p>
-            Added {saveProgress.total} album{saveProgress.total !== 1 ? "s" : ""}{" "}
-            to your library.
+            {mode === "artists"
+              ? `Followed ${saveProgress.total} artist${saveProgress.total !== 1 ? "s" : ""}.`
+              : `Added ${saveProgress.total} album${saveProgress.total !== 1 ? "s" : ""} to your library.`}
           </p>
-          <button className="btn btn-primary btn-medium" onClick={startScan}>
-            Scan Again
+          <button className="btn btn-primary btn-medium" onClick={backToIdle}>
+            Back
           </button>
         </div>
       )}
@@ -368,8 +576,8 @@ export default function ScanPage() {
         <div className="status-message error">
           <h2>Something went wrong</h2>
           <p>{error}</p>
-          <button className="btn btn-primary btn-medium" onClick={startScan}>
-            Try Again
+          <button className="btn btn-primary btn-medium" onClick={backToIdle}>
+            Back
           </button>
         </div>
       )}

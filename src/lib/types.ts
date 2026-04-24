@@ -7,6 +7,9 @@ export interface SessionData {
   oauthState?: string;
 }
 
+// Which scan flow the user picked from the idle screen
+export type ScanMode = "albums" | "artists";
+
 // Album accumulated during scan
 export interface AlbumAccumulator {
   id: string;
@@ -17,6 +20,14 @@ export interface AlbumAccumulator {
   likedTracks: number;
 }
 
+// Artist surfaced by the artist-follow scan
+export interface ArtistToFollow {
+  id: string;
+  name: string;
+  imageUrl: string;
+  albumCount: number;
+}
+
 // Scan progress callback payload
 export interface ScanProgress {
   phase: "scanning" | "checking" | "complete" | "error" | "rate_limited";
@@ -25,6 +36,18 @@ export interface ScanProgress {
   pagesCompleted: number;
   totalPages: number;
   albumsFound: number;
+  error?: string;
+  rateLimitWaitSeconds?: number;
+}
+
+// Progress callback for the artist-follow scan
+export interface FollowProgress {
+  phase: "scanning" | "checking" | "complete" | "error" | "rate_limited";
+  albumsScanned: number;
+  totalAlbums: number;
+  pagesCompleted: number;
+  totalPages: number;
+  artistsFound: number;
   error?: string;
   rateLimitWaitSeconds?: number;
 }
@@ -48,11 +71,17 @@ export interface SpotifyImage {
 export interface SpotifySimplifiedAlbum {
   id: string;
   name: string;
-  artists: { name: string }[];
+  artists: { id: string; name: string }[];
   images: SpotifyImage[];
   total_tracks: number;
   album_type: string;
   uri: string;
+}
+
+export interface SpotifyArtist {
+  id: string;
+  name: string;
+  images: SpotifyImage[];
 }
 
 export interface SpotifySavedTrack {
@@ -69,7 +98,7 @@ export interface SpotifySavedAlbum {
   album: {
     id: string;
     name: string;
-    artists: { name: string }[];
+    artists: { id: string; name: string }[];
   };
 }
 

@@ -144,6 +144,37 @@ body {
   margin-bottom: 1.5rem;
 }
 
+/* Mode picker on the idle screen */
+.mode-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  max-width: 480px;
+  margin: 1.5rem auto 0;
+}
+
+.mode-picker .btn-large {
+  width: 100%;
+}
+
+.mode-help {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0 0 1.25rem;
+  text-align: center;
+}
+
+.signout-btn {
+  margin-top: 1.5rem;
+}
+
+/* Artist image — circular */
+.artist-art {
+  border-radius: 50%;
+}
+
 /* Progress */
 .scan-progress {
   margin-top: 3rem;

@@ -13,9 +13,9 @@ export default async function Home() {
       <div className="landing-content">
         <h1>Spotify Album Searcher</h1>
         <p>
-          Discover albums you should save to your library. This app scans your
-          liked songs and finds albums where you&apos;ve liked 70% or more of
-          the tracks but haven&apos;t saved the album itself.
+          Two tools for tidying your Spotify library: find albums you should
+          save (where you&apos;ve liked 70%+ of the tracks), or follow the
+          artists from albums you&apos;ve saved.
         </p>
         <a href="/api/auth/login" className="btn btn-primary btn-large">
           Login with Spotify

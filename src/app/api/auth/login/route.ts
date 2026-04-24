@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     client_id: process.env.SPOTIFY_CLIENT_ID!,
     response_type: "code",
     redirect_uri: `${origin}/api/auth/callback`,
-    scope: "user-library-read user-library-modify",
+    scope: "user-library-read user-library-modify user-follow-read user-follow-modify",
     state,
   });
 
