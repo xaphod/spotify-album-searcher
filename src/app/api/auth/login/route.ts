@@ -8,7 +8,12 @@ export async function GET(request: NextRequest) {
   session.oauthState = state;
   await session.save();
 
-  const origin = request.nextUrl.origin;
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host")!;
+  const proto =
+    request.headers.get("x-forwarded-proto") ??
+    request.nextUrl.protocol.replace(":", "");
+  const origin = `${proto}://${host}`;
   const params = new URLSearchParams({
     client_id: process.env.SPOTIFY_CLIENT_ID!,
     response_type: "code",
