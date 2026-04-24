@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { SpotifyUser } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
+  console.log("[oauth] callback route hit");
   const { searchParams } = request.nextUrl;
   const code = searchParams.get("code");
   const state = searchParams.get("state");
@@ -52,6 +53,21 @@ export async function GET(request: NextRequest) {
   }
 
   const tokenData = await tokenRes.json();
+  console.log("[oauth] granted scopes:", tokenData.scope);
+
+  const grantedScopes: string[] = (tokenData.scope ?? "").split(" ");
+  const required = [
+    "user-library-read",
+    "user-library-modify",
+    "user-follow-read",
+    "user-follow-modify",
+  ];
+  const missing = required.filter((s) => !grantedScopes.includes(s));
+  if (missing.length > 0) {
+    return NextResponse.redirect(
+      `${origin}/?error=missing_scopes:${missing.join(",")}`
+    );
+  }
 
   // Fetch user profile for display name
   let userName: string | undefined;

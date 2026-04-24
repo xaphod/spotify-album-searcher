@@ -3,18 +3,16 @@ import {
   ArtistToFollow,
   FollowProgress,
   ScanProgress,
-  SpotifyImage,
   SpotifyPaging,
   SpotifySavedAlbum,
   SpotifySavedTrack,
 } from "./types";
 import {
   RateLimitedPool,
-  getArtists,
+  checkArtistsFollowed,
   getLikedTracksPage,
   getSavedAlbumsPage,
   checkAlbumsSaved,
-  checkArtistsFollowed,
   getSavedAlbumKeys,
 } from "./spotify";
 
@@ -237,18 +235,12 @@ export async function scanArtistsToFollow(
     return [];
   }
 
-  const fullArtists = await getArtists(pool, latestToken, unfollowed);
-  const imageById = new Map<string, string>();
-  for (const a of fullArtists) {
-    imageById.set(a.id, pickSmallestImage(a.images));
-  }
-
   const result: ArtistToFollow[] = unfollowed.map((id) => {
     const acc = artistMap.get(id)!;
     return {
       id,
       name: acc.name,
-      imageUrl: imageById.get(id) ?? "",
+      imageUrl: "",
       albumCount: acc.albumCount,
     };
   });
@@ -282,17 +274,6 @@ function extractEligibleArtists(
       }
     }
   }
-}
-
-function pickSmallestImage(images: SpotifyImage[]): string {
-  if (images.length === 0) return "";
-  const smallest = images.reduce<SpotifyImage | null>((acc, img) => {
-    if (!acc || (img.width && acc.width && img.width < acc.width)) {
-      return img;
-    }
-    return acc;
-  }, null);
-  return smallest?.url ?? images[0].url;
 }
 
 function extractAlbums(

@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     redirect_uri: `${origin}/api/auth/callback`,
     scope: "user-library-read user-library-modify user-follow-read user-follow-modify",
     state,
+    show_dialog: "true",
   });
 
   return NextResponse.redirect(

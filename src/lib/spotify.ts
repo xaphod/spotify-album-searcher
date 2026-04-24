@@ -211,12 +211,13 @@ export async function checkArtistsFollowed(
   artistIds: string[]
 ): Promise<Map<string, boolean>> {
   const result = new Map<string, boolean>();
-  for (let i = 0; i < artistIds.length; i += 50) {
-    const batch = artistIds.slice(i, i + 50);
+  for (let i = 0; i < artistIds.length; i += 20) {
+    const batch = artistIds.slice(i, i + 20);
+    const uris = batch.map((id) => `spotify:artist:${id}`);
     const followed = await spotifyFetch<boolean[]>(
       pool,
       token,
-      `${SPOTIFY_API}/me/following/contains?type=artist&ids=${batch.join(",")}`
+      `${SPOTIFY_API}/me/library/contains?uris=${uris.join(",")}&type=artist`
     );
     batch.forEach((id, idx) => result.set(id, followed[idx]));
   }
@@ -248,12 +249,13 @@ export async function followArtists(
   onProgress?: (followed: number, total: number) => void
 ): Promise<void> {
   let followed = 0;
-  for (let i = 0; i < artistIds.length; i += 50) {
-    const batch = artistIds.slice(i, i + 50);
+  for (let i = 0; i < artistIds.length; i += 10) {
+    const batch = artistIds.slice(i, i + 10);
+    const uris = batch.map((id) => `spotify:artist:${id}`);
     await spotifyFetch<void>(
       pool,
       token,
-      `${SPOTIFY_API}/me/following?type=artist&ids=${batch.join(",")}`,
+      `${SPOTIFY_API}/me/library?uris=${encodeURIComponent(uris.join(","))}&type=artist`,
       { method: "PUT" }
     );
     followed += batch.length;
